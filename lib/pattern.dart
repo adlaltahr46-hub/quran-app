@@ -2,30 +2,48 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 class PatternScroll extends StatelessWidget {
+  final ScrollController? controller;
   final EdgeInsetsGeometry padding;
   final Widget child;
-  const PatternScroll({super.key, required this.padding, required this.child});
+  const PatternScroll({
+    super.key,
+    this.controller,
+    required this.padding,
+    required this.child,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
     return Stack(
       children: [
-        Positioned.fill(child: CustomPaint(painter: IslamicPatternPainter())),
-        SingleChildScrollView(padding: padding, child: child),
+        Positioned.fill(
+          child: CustomPaint(painter: IslamicPatternPainter(dark)),
+        ),
+        SingleChildScrollView(
+          controller: controller,
+          padding: padding,
+          child: child,
+        ),
       ],
     );
   }
 }
 
 class IslamicPatternPainter extends CustomPainter {
+  final bool dark;
+  IslamicPatternPainter(this.dark);
+
   @override
   void paint(Canvas canvas, Size size) {
     canvas.drawRect(
       Offset.zero & size,
-      Paint()..color = const Color(0xFFF5F5EC),
+      Paint()..color = dark ? const Color(0xFF0F1A16) : const Color(0xFFF5F5EC),
     );
     final line = Paint()
-      ..color = const Color(0xFF14513E).withOpacity(0.09)
+      ..color = dark
+          ? const Color(0xFF7FD1AE).withOpacity(0.07)
+          : const Color(0xFF14513E).withOpacity(0.09)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.2;
     const s = 76.0;
@@ -66,5 +84,6 @@ class IslamicPatternPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant IslamicPatternPainter oldDelegate) =>
+      oldDelegate.dark != dark;
 }
