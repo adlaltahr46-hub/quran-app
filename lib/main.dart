@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'pattern.dart';
 
 const surahNames = [
   'الفاتحة', 'البقرة', 'آل عمران', 'النساء', 'المائدة', 'الأنعام', 'الأعراف',
@@ -23,7 +24,20 @@ const surahNames = [
 ];
 
 const green = Color(0xFF14513E);
+const greenLight = Color(0xFF7FD1AE);
 const flameOn = Color(0xFFF26B1D);
+
+final ValueNotifier<ThemeMode> themeMode = ValueNotifier(ThemeMode.light);
+
+bool isDark(BuildContext c) => Theme.of(c).brightness == Brightness.dark;
+Color accent(BuildContext c) => isDark(c) ? greenLight : green;
+
+Future<void> toggleTheme() async {
+  final dark = themeMode.value != ThemeMode.dark;
+  themeMode.value = dark ? ThemeMode.dark : ThemeMode.light;
+  final p = await SharedPreferences.getInstance();
+  await p.setBool('dark', dark);
+}
 
 String arabicDigits(int n) {
   const d = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
@@ -80,29 +94,49 @@ Future<Map<int, List<String>>> loadQuran() async {
   return map;
 }
 
-void main() => runApp(const QuranApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final p = await SharedPreferences.getInstance();
+  themeMode.value =
+      (p.getBool('dark') ?? false) ? ThemeMode.dark : ThemeMode.light;
+  runApp(const QuranApp());
+}
 
 class QuranApp extends StatelessWidget {
   const QuranApp({super.key});
 
+  ThemeData _theme(Brightness b) {
+    final dark = b == Brightness.dark;
+    final bg = dark ? const Color(0xFF0F1A16) : const Color(0xFFF6F8F6);
+    return ThemeData(
+      useMaterial3: true,
+      colorScheme: ColorScheme.fromSeed(seedColor: green, brightness: b),
+      scaffoldBackgroundColor: bg,
+      appBarTheme: AppBarTheme(
+        backgroundColor: bg,
+        foregroundColor: dark ? greenLight : green,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'القرآن الكريم',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: green),
-        scaffoldBackgroundColor: const Color(0xFFF6F8F6),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFFF6F8F6),
-          foregroundColor: green,
-          elevation: 0,
-        ),
-      ),
-      builder: (context, child) =>
-          Directionality(textDirection: TextDirection.rtl, child: child!),
-      home: const HomePage(),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: themeMode,
+      builder: (context, mode, _) {
+        return MaterialApp(
+          title: 'القرآن الكريم',
+          debugShowCheckedModeBanner: false,
+          theme: _theme(Brightness.light),
+          darkTheme: _theme(Brightness.dark),
+          themeMode: mode,
+          builder: (context, child) =>
+              Directionality(textDirection: TextDirection.rtl, child: child!),
+          home: const HomePage(),
+        );
+      },
     );
   }
 }
@@ -117,6 +151,8 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   Map<int, List<String>>? quran;
   StreakData streak = const StreakData(0, false);
+  int? lastSurah;
+  double lastFrac = 0;
   String? error;
 
   @override
@@ -125,16 +161,31 @@ class _HomePageState extends State<HomePage> {
     _init();
   }
 
+  Future<void> _loadLast() async {
+    final p = await SharedPreferences.getInstance();
+    final s = p.getInt('last_surah');
+    final f = p.getDouble('last_frac') ?? 0.0;
+    if (!mounted) return;
+    setState(() {
+      lastSurah = s;
+      lastFrac = f;
+    });
+  }
+
   Future<void> _init() async {
     try {
       final q = await loadQuran();
       final s = await StreakService.load();
+      if (!mounted) return;
       setState(() {
         quran = q;
         streak = s;
       });
+      await _loadLast();
     } catch (e) {
-      setState(() => error = 'تعذّر تحميل نص القرآن. تأكد من وجود الملف assets/quran.txt');
+      if (!mounted) return;
+      setState(() => error =
+          'تعذّر تحميل نص القرآن. تأكد من وجود الملف assets/quran.txt');
     }
   }
 
@@ -147,6 +198,7 @@ class _HomePageState extends State<HomePage> {
     );
     final s = await StreakService.load();
     if (mounted) setState(() => streak = s);
+    await _loadLast();
   }
 
   void _about() {
@@ -154,18 +206,27 @@ class _HomePageState extends State<HomePage> {
       context: context,
       applicationName: 'القرآن الكريم',
       children: const [
-        Text('نص القرآن الكريم من مشروع تنزيل (tanzil.net) بموجب رخصة Creative Commons Attribution 3.0، وهو غير معدّل.'),
+        Text(
+            'نص القرآن الكريم من مشروع تنزيل (tanzil.net) بموجب رخصة Creative Commons Attribution 3.0، وهو غير معدّل.'),
       ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final dark = isDark(context);
+    final acc = accent(context);
+    final last = lastSurah;
     return Scaffold(
       appBar: AppBar(
         title: const Text('القرآن الكريم',
             style: TextStyle(fontWeight: FontWeight.w600)),
         actions: [
+          IconButton(
+            icon: Icon(dark ? Icons.light_mode : Icons.dark_mode),
+            tooltip: 'الوضع الليلي',
+            onPressed: toggleTheme,
+          ),
           IconButton(
             icon: const Icon(Icons.info_outline),
             tooltip: 'عن التطبيق',
@@ -185,6 +246,12 @@ class _HomePageState extends State<HomePage> {
               : Column(
                   children: [
                     StreakBadge(streak: streak),
+                    if (last != null && last >= 1 && last <= 114)
+                      ContinueCard(
+                        surah: last,
+                        frac: lastFrac,
+                        onTap: () => _open(last),
+                      ),
                     Expanded(
                       child: ListView.separated(
                         itemCount: 114,
@@ -192,10 +259,9 @@ class _HomePageState extends State<HomePage> {
                         itemBuilder: (_, i) => ListTile(
                           leading: CircleAvatar(
                             radius: 18,
-                            backgroundColor: green.withOpacity(0.1),
+                            backgroundColor: acc.withOpacity(0.12),
                             child: Text(arabicDigits(i + 1),
-                                style: const TextStyle(
-                                    color: green, fontSize: 13)),
+                                style: TextStyle(color: acc, fontSize: 13)),
                           ),
                           title: Text('سورة ${surahNames[i]}',
                               style: const TextStyle(fontSize: 18)),
@@ -209,12 +275,61 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
+class ContinueCard extends StatelessWidget {
+  final int surah;
+  final double frac;
+  final VoidCallback onTap;
+  const ContinueCard({
+    super.key,
+    required this.surah,
+    required this.frac,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final acc = accent(context);
+    final percent = (frac * 100).round();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Material(
+        color: acc.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                Icon(Icons.bookmark, color: acc),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'تابع القراءة: سورة ${surahNames[surah - 1]}',
+                    style: const TextStyle(fontSize: 16),
+                  ),
+                ),
+                Text(
+                  '${arabicDigits(percent)}٪',
+                  style: TextStyle(color: acc, fontSize: 14),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class StreakBadge extends StatelessWidget {
   final StreakData streak;
   const StreakBadge({super.key, required this.streak});
 
   @override
   Widget build(BuildContext context) {
+    final dark = isDark(context);
     final lit = streak.doneToday;
     final color = lit ? flameOn : Colors.grey;
     final message = lit
@@ -226,9 +341,9 @@ class StreakBadge extends StatelessWidget {
       margin: const EdgeInsets.fromLTRB(16, 4, 16, 12),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: dark ? const Color(0xFF1A2A24) : Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.black12),
+        border: Border.all(color: dark ? Colors.white12 : Colors.black12),
       ),
       child: Row(
         children: [
@@ -240,7 +355,9 @@ class StreakBadge extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: Text(message,
-                style: const TextStyle(fontSize: 15, color: Colors.black54)),
+                style: TextStyle(
+                    fontSize: 15,
+                    color: dark ? Colors.white70 : Colors.black54)),
           ),
         ],
       ),
@@ -260,22 +377,58 @@ class ReadPage extends StatefulWidget {
 class _ReadPageState extends State<ReadPage> {
   double fontSize = 26;
   int? newStreak;
+  final ScrollController ctrl = ScrollController();
+  SharedPreferences? prefs;
+  double _lastFrac = 0;
 
   @override
   void initState() {
     super.initState();
-    _loadFont();
+    ctrl.addListener(_onScroll);
+    _init();
     _checkStreak();
   }
 
-  Future<void> _loadFont() async {
+  Future<void> _init() async {
     final p = await SharedPreferences.getInstance();
+    prefs = p;
     final f = p.getDouble('font_size');
-    if (f != null && mounted) setState(() => fontSize = f);
+    final sameSurah = p.getInt('last_surah') == widget.surah;
+    final frac = sameSurah ? (p.getDouble('last_frac') ?? 0.0) : 0.0;
+    if (!sameSurah) {
+      await p.setInt('last_surah', widget.surah);
+      await p.setDouble('last_frac', 0.0);
+    }
+    _lastFrac = frac;
+    if (!mounted) return;
+    setState(() {
+      if (f != null) fontSize = f;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || frac <= 0 || !ctrl.hasClients) return;
+      ctrl.jumpTo(frac * ctrl.position.maxScrollExtent);
+    });
+  }
+
+  void _onScroll() {
+    if (!ctrl.hasClients) return;
+    final max = ctrl.position.maxScrollExtent;
+    if (max <= 0) return;
+    final frac = (ctrl.offset / max).clamp(0.0, 1.0).toDouble();
+    if ((frac - _lastFrac).abs() < 0.004) return;
+    _lastFrac = frac;
+    prefs?.setDouble('last_frac', frac);
+  }
+
+  @override
+  void dispose() {
+    prefs?.setDouble('last_frac', _lastFrac);
+    ctrl.dispose();
+    super.dispose();
   }
 
   Future<void> _changeFont(double delta) async {
-    final next = (fontSize + delta).clamp(18.0, 44.0);
+    final next = (fontSize + delta).clamp(18.0, 44.0).toDouble();
     setState(() => fontSize = next);
     final p = await SharedPreferences.getInstance();
     await p.setDouble('font_size', next);
@@ -289,10 +442,19 @@ class _ReadPageState extends State<ReadPage> {
   @override
   Widget build(BuildContext context) {
     final ayat = widget.ayat;
+    final dark = isDark(context);
+    final acc = accent(context);
+    final textColor =
+        dark ? const Color(0xFFEDE8D5) : const Color(0xFF1B1B1B);
     return Scaffold(
       appBar: AppBar(
         title: Text('سورة ${surahNames[widget.surah - 1]}'),
         actions: [
+          IconButton(
+            icon: Icon(dark ? Icons.light_mode : Icons.dark_mode),
+            tooltip: 'الوضع الليلي',
+            onPressed: toggleTheme,
+          ),
           IconButton(
             icon: const Icon(Icons.remove),
             tooltip: 'تصغير الخط',
@@ -307,7 +469,8 @@ class _ReadPageState extends State<ReadPage> {
       ),
       body: Stack(
         children: [
-          SingleChildScrollView(
+          PatternScroll(
+            controller: ctrl,
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
             child: Text.rich(
               TextSpan(
@@ -316,13 +479,13 @@ class _ReadPageState extends State<ReadPage> {
                     TextSpan(text: ayat[i]),
                     TextSpan(
                       text: ' \uFD3F${arabicDigits(i + 1)}\uFD3E ',
-                      style: TextStyle(color: green, fontSize: fontSize * 0.75),
+                      style: TextStyle(color: acc, fontSize: fontSize * 0.75),
                     ),
                   ],
                 ],
               ),
               textAlign: TextAlign.justify,
-              style: TextStyle(fontSize: fontSize, height: 2.0),
+              style: TextStyle(fontSize: fontSize, height: 2.0, color: textColor),
             ),
           ),
           if (newStreak != null)
@@ -385,7 +548,7 @@ class _FlameOverlayState extends State<FlameOverlay>
           child: AnimatedBuilder(
             animation: c,
             builder: (_, __) {
-              final g = glow.value.clamp(0.0, 1.0);
+              final g = glow.value.clamp(0.0, 1.0).toDouble();
               final color = Color.lerp(Colors.grey, flameOn, g)!;
               return Column(
                 mainAxisSize: MainAxisSize.min,
@@ -439,4 +602,4 @@ class _FlameOverlayState extends State<FlameOverlay>
       ),
     );
   }
-}
+} 
