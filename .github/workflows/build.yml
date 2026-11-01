@@ -11,12 +11,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Move Quran text into assets
+      - name: Move files into assets
         run: |
-          if [ ! -f assets/quran.txt ]; then
-            mkdir -p assets
-            mv quran*.txt assets/quran.txt
-          fi
+          mkdir -p assets
+          if [ ! -f assets/quran.txt ]; then mv quran*.txt assets/quran.txt; fi
+          if [ -f icon-1.png ]; then mv icon-1.png assets/icon.png; elif [ -f icon.png ]; then mv icon.png assets/icon.png; fi
 
       - uses: actions/setup-java@v4
         with:
@@ -30,8 +29,14 @@ jobs:
       - name: Generate Android project
         run: flutter create --platforms=android --org com.example .
 
+      - name: Set app name
+        run: sed -i 's/android:label="[^"]*"/android:label="القرآن الكريم"/' android/app/src/main/AndroidManifest.xml
+
       - name: Get packages
         run: flutter pub get
+
+      - name: Create launcher icons
+        run: dart run flutter_launcher_icons
 
       - name: Build release APK
         run: flutter build apk --release
