@@ -17,6 +17,23 @@ jobs:
           if [ ! -f assets/quran.txt ]; then mv quran*.txt assets/quran.txt; fi
           if [ -f icon-1.png ]; then mv icon-1.png assets/icon.png; elif [ -f icon.png ]; then mv icon.png assets/icon.png; fi
 
+      - name: Download Quran font (Amiri Quran)
+        run: |
+          mkdir -p assets/fonts
+          curl -fL --retry 3 -o assets/fonts/AmiriQuran.ttf https://mirrors.ctan.org/fonts/amiri/AmiriQuran.ttf || curl -fL --retry 3 -o assets/fonts/AmiriQuran.ttf https://mirrors.mit.edu/CTAN/fonts/amiri/AmiriQuran.ttf || true
+          if [ -f assets/fonts/AmiriQuran.ttf ] && [ "$(stat -c%s assets/fonts/AmiriQuran.ttf)" -gt 50000 ]; then
+            python3 - <<'EOF'
+          p = 'pubspec.yaml'
+          s = open(p, encoding='utf-8').read()
+          s = s.replace('  uses-material-design: true', '  uses-material-design: true\n  fonts:\n    - family: AmiriQuran\n      fonts:\n        - asset: assets/fonts/AmiriQuran.ttf', 1)
+          open(p, 'w', encoding='utf-8').write(s)
+          EOF
+            echo "font installed"
+          else
+            rm -f assets/fonts/AmiriQuran.ttf
+            echo "font download failed, using default font"
+          fi
+
       - name: Hook up reminder in Dart code
         run: |
           python3 - <<'EOF'
