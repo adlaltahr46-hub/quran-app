@@ -271,4 +271,172 @@ class _ReadPageState extends State<ReadPage> {
   Future<void> _loadFont() async {
     final p = await SharedPreferences.getInstance();
     final f = p.getDouble('font_size');
-    if (f !=
+    if (f != null && mounted) setState(() => fontSize = f);
+  }
+
+  Future<void> _changeFont(double delta) async {
+    final next = (fontSize + delta).clamp(18.0, 44.0);
+    setState(() => fontSize = next);
+    final p = await SharedPreferences.getInstance();
+    await p.setDouble('font_size', next);
+  }
+
+  Future<void> _checkStreak() async {
+    final n = await StreakService.markReadToday();
+    if (n != null && mounted) setState(() => newStreak = n);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ayat = widget.ayat;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('سورة ${surahNames[widget.surah - 1]}'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.remove),
+            tooltip: 'تصغير الخط',
+            onPressed: () => _changeFont(-2),
+          ),
+          IconButton(
+            icon: const Icon(Icons.add),
+            tooltip: 'تكبير الخط',
+            onPressed: () => _changeFont(2),
+          ),
+        ],
+      ),
+      body: Stack(
+        children: [
+          SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
+            child: Text.rich(
+              TextSpan(
+                children: [
+                  for (var i = 0; i < ayat.length; i++) ...[
+                    TextSpan(text: ayat[i]),
+                    TextSpan(
+                      text: ' \uFD3F${arabicDigits(i + 1)}\uFD3E ',
+                      style: TextStyle(color: green, fontSize: fontSize * 0.75),
+                    ),
+                  ],
+                ],
+              ),
+              textAlign: TextAlign.justify,
+              style: TextStyle(fontSize: fontSize, height: 2.0),
+            ),
+          ),
+          if (newStreak != null)
+            Positioned.fill(
+              child: FlameOverlay(
+                count: newStreak!,
+                onDone: () => setState(() => newStreak = null),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class FlameOverlay extends StatefulWidget {
+  final int count;
+  final VoidCallback onDone;
+  const FlameOverlay({super.key, required this.count, required this.onDone});
+
+  @override
+  State<FlameOverlay> createState() => _FlameOverlayState();
+}
+
+class _FlameOverlayState extends State<FlameOverlay>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1800),
+  );
+  late final Animation<double> scale = Tween<double>(begin: 0.2, end: 1.0)
+      .animate(CurvedAnimation(
+          parent: c,
+          curve: const Interval(0.0, 0.6, curve: Curves.elasticOut)));
+  late final Animation<double> glow = CurvedAnimation(
+      parent: c, curve: const Interval(0.4, 1.0, curve: Curves.easeIn));
+  Timer? timer;
+
+  @override
+  void initState() {
+    super.initState();
+    c.forward();
+    timer = Timer(const Duration(milliseconds: 3200), widget.onDone);
+  }
+
+  @override
+  void dispose() {
+    timer?.cancel();
+    c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onDone,
+      child: Container(
+        color: Colors.black.withOpacity(0.65),
+        child: Center(
+          child: AnimatedBuilder(
+            animation: c,
+            builder: (_, __) {
+              final g = glow.value.clamp(0.0, 1.0);
+              final color = Color.lerp(Colors.grey, flameOn, g)!;
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Transform.scale(
+                    scale: scale.value,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: flameOn.withOpacity(0.55 * g),
+                            blurRadius: 70 * g,
+                            spreadRadius: 8 * g,
+                          ),
+                        ],
+                      ),
+                      child: Icon(Icons.local_fire_department,
+                          size: 150, color: color),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Opacity(
+                    opacity: g,
+                    child: Text(
+                      arabicDigits(widget.count),
+                      style: const TextStyle(
+                        fontSize: 56,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                        decoration: TextDecoration.none,
+                      ),
+                    ),
+                  ),
+                  Opacity(
+                    opacity: g,
+                    child: const Text(
+                      'يوماً متتالياً',
+                      style: TextStyle(
+                        fontSize: 20,
+                        color: Colors.white70,
+                        decoration: TextDecoration.none,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
