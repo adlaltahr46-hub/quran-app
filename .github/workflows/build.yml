@@ -17,6 +17,11 @@ jobs:
           if [ ! -f assets/quran.txt ]; then mv quran*.txt assets/quran.txt; fi
           if [ -f icon-1.png ]; then mv icon-1.png assets/icon.png; elif [ -f icon.png ]; then mv icon.png assets/icon.png; fi
 
+      - name: Add background pattern
+        run: |
+          sed -i "1i import 'pattern.dart';" lib/main.dart
+          sed -i 's/SingleChildScrollView(/PatternScroll(/' lib/main.dart
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
