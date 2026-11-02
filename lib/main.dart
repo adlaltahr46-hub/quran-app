@@ -24,15 +24,47 @@ const surahNames = [
   'الفلق', 'الناس',
 ];
 
-const green = Color(0xFF14513E);
-const greenLight = Color(0xFF7FD1AE);
 const flameOn = Color(0xFFF26B1D);
 const quranFont = 'AmiriQuran';
+const kTotalAyat = 6236;
 
+class Rank {
+  final String name;
+  final double min;
+  final Color color;
+  final int stars;
+  const Rank(this.name, this.min, this.color, this.stars);
+}
+
+const ranks = [
+  Rank('مبتدئ', 0.0, Color(0xFF14513E), 1),
+  Rank('مواظب', 0.05, Color(0xFF0E7C66), 2),
+  Rank('قارئ', 0.15, Color(0xFF1B6FA8), 3),
+  Rank('ثابت', 0.30, Color(0xFF4B54C4), 4),
+  Rank('مُجِدّ', 0.50, Color(0xFF8E44AD), 5),
+  Rank('مُتقِن', 0.75, Color(0xFFC2571A), 6),
+  Rank('نجم القراءة', 1.0, Color(0xFFB03A5B), 7),
+  Rank('همّة عالية', 2.0, Color(0xFFB8860B), 8),
+];
+
+int rankIndexFor(double score) {
+  var r = 0;
+  for (var i = 0; i < ranks.length; i++) {
+    if (score >= ranks[i].min) r = i;
+  }
+  return r;
+}
+
+final ValueNotifier<int> rankIndex = ValueNotifier(0);
 final ValueNotifier<ThemeMode> themeMode = ValueNotifier(ThemeMode.light);
 
 bool isDark(BuildContext c) => Theme.of(c).brightness == Brightness.dark;
-Color accent(BuildContext c) => isDark(c) ? greenLight : green;
+
+Color accent(BuildContext c) {
+  final base = ranks[rankIndex.value].color;
+  return isDark(c) ? Color.lerp(base, Colors.white, 0.4)! : base;
+}
+
 Color cardColor(BuildContext c) =>
     isDark(c) ? const Color(0xFF16231E) : Colors.white;
 Color mutedColor(BuildContext c) =>
@@ -105,6 +137,7 @@ Future<void> main() async {
   final p = await SharedPreferences.getInstance();
   themeMode.value =
       (p.getBool('dark') ?? false) ? ThemeMode.dark : ThemeMode.light;
+  rankIndex.value = rankIndexFor(p.getDouble('score') ?? 0.0);
   runApp(const QuranApp());
 }
 
@@ -113,14 +146,15 @@ class QuranApp extends StatelessWidget {
 
   ThemeData _theme(Brightness b) {
     final dark = b == Brightness.dark;
+    final base = ranks[rankIndex.value].color;
     final bg = dark ? const Color(0xFF0F1A16) : const Color(0xFFF6F8F6);
     return ThemeData(
       useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(seedColor: green, brightness: b),
+      colorScheme: ColorScheme.fromSeed(seedColor: base, brightness: b),
       scaffoldBackgroundColor: bg,
       appBarTheme: AppBarTheme(
         backgroundColor: bg,
-        foregroundColor: dark ? greenLight : green,
+        foregroundColor: dark ? Color.lerp(base, Colors.white, 0.4) : base,
         elevation: 0,
         scrolledUnderElevation: 0,
       ),
@@ -129,18 +163,23 @@ class QuranApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<ThemeMode>(
-      valueListenable: themeMode,
-      builder: (context, mode, _) {
-        return MaterialApp(
-          title: 'القرآن الكريم',
-          debugShowCheckedModeBanner: false,
-          theme: _theme(Brightness.light),
-          darkTheme: _theme(Brightness.dark),
-          themeMode: mode,
-          builder: (context, child) =>
-              Directionality(textDirection: TextDirection.rtl, child: child!),
-          home: const HomePage(),
+    return ValueListenableBuilder<int>(
+      valueListenable: rankIndex,
+      builder: (context, _, __) {
+        return ValueListenableBuilder<ThemeMode>(
+          valueListenable: themeMode,
+          builder: (context, mode, _) {
+            return MaterialApp(
+              title: 'القرآن الكريم',
+              debugShowCheckedModeBanner: false,
+              theme: _theme(Brightness.light),
+              darkTheme: _theme(Brightness.dark),
+              themeMode: mode,
+              builder: (context, child) => Directionality(
+                  textDirection: TextDirection.rtl, child: child!),
+              home: const HomePage(),
+            );
+          },
         );
       },
     );
@@ -161,6 +200,7 @@ class _HomePageState extends State<HomePage> {
   double lastFrac = 0;
   Map<int, double> progress = {};
   double khatma = 0;
+  double score = 0;
   int doneCount = 0;
   int khatmaCount = 0;
   String? error;
@@ -188,12 +228,18 @@ class _HomePageState extends State<HomePage> {
       readAyat += v * n;
       if (v >= 0.97) done++;
     }
+    final k = totalAyat == 0 ? 0.0 : readAyat / totalAyat;
+    double sc = p.getDouble('score') ?? k;
+    if (sc < k) sc = k;
+    await p.setDouble('score', sc);
     if (!mounted) return;
+    rankIndex.value = rankIndexFor(sc);
     setState(() {
       lastSurah = s;
       lastFrac = f;
       progress = prog;
-      khatma = totalAyat == 0 ? 0.0 : readAyat / totalAyat;
+      khatma = k;
+      score = sc;
       doneCount = done;
       khatmaCount = p.getInt('khatma_count') ?? 0;
     });
@@ -234,7 +280,7 @@ class _HomePageState extends State<HomePage> {
       builder: (ctx) => AlertDialog(
         title: const Text('بدء ختمة جديدة؟'),
         content: const Text(
-            'سيُمسح تقدّمك في الختمة وعلامات السور المكتملة ومكان التوقف. لن يتأثر الاستريك.'),
+            'سيُمسح تقدّمك في الختمة وعلامات السور المكتملة ومكان التوقف. لن يتأثر الاستريك ولا رتبتك.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -313,6 +359,7 @@ class _HomePageState extends State<HomePage> {
                     if (i == 0) {
                       return Column(
                         children: [
+                          RankCard(score: score),
                           StreakBadge(streak: streak),
                           KhatmaCard(
                             value: khatma,
@@ -337,6 +384,122 @@ class _HomePageState extends State<HomePage> {
                     );
                   },
                 ),
+    );
+  }
+}
+
+class RankCard extends StatelessWidget {
+  final double score;
+  const RankCard({super.key, required this.score});
+
+  @override
+  Widget build(BuildContext context) {
+    final acc = accent(context);
+    final idx = rankIndexFor(score);
+    final rank = ranks[idx];
+    final nextRank = idx + 1 < ranks.length ? ranks[idx + 1] : null;
+    final progress = nextRank == null
+        ? 1.0
+        : ((score - rank.min) / (nextRank.min - rank.min))
+            .clamp(0.0, 1.0)
+            .toDouble();
+    final remainPct =
+        nextRank == null ? 0 : ((nextRank.min - score) * 100).ceil();
+    final note = nextRank == null
+        ? 'وصلت إلى أعلى رتبة، بارك الله فيك'
+        : 'باقٍ ${arabicDigits(remainPct < 1 ? 1 : remainPct)}٪ من القرآن للوصول إلى «${nextRank.name}»';
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: cardColor(context),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: acc.withOpacity(0.5), width: 1.4),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 58,
+                height: 58,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    begin: Alignment.topRight,
+                    end: Alignment.bottomLeft,
+                    colors: [
+                      Color.lerp(rank.color, Colors.white, 0.3)!,
+                      rank.color,
+                    ],
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: rank.color.withOpacity(0.4),
+                      blurRadius: 14,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+                child: const Icon(Icons.workspace_premium,
+                    color: Colors.white, size: 32),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('رتبتك',
+                        style: TextStyle(
+                            fontSize: 12, color: mutedColor(context))),
+                    Text(rank.name,
+                        style: TextStyle(
+                            fontFamily: quranFont, fontSize: 24, color: acc)),
+                    Row(
+                      children: [
+                        for (var i = 0; i < ranks.length; i++)
+                          Icon(
+                            i < rank.stars ? Icons.star : Icons.star_border,
+                            size: 14,
+                            color: acc,
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              Column(
+                children: [
+                  Text('${arabicDigits((score * 100).floor())}٪',
+                      style: TextStyle(
+                          fontSize: 26,
+                          fontWeight: FontWeight.w600,
+                          color: acc)),
+                  Text('مما قرأته',
+                      style: TextStyle(
+                          fontSize: 12, color: mutedColor(context))),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 8,
+              backgroundColor: acc.withOpacity(0.15),
+              color: acc,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: Text(note,
+                style: TextStyle(fontSize: 13, color: mutedColor(context))),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -589,7 +752,7 @@ class StreakBadge extends StatelessWidget {
             ? 'اقرأ اليوم لتحافظ على الاستريك'
             : 'ابدأ استريكك اليوم';
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
         color: cardColor(context),
@@ -622,6 +785,7 @@ class SurahHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final acc = accent(context);
+    final rank = ranks[rankIndex.value];
     return Container(
       margin: const EdgeInsets.fromLTRB(0, 8, 0, 14),
       padding: const EdgeInsets.symmetric(vertical: 14),
@@ -641,6 +805,14 @@ class SurahHeader extends StatelessWidget {
             '${arabicDigits(count)} آية',
             style: TextStyle(fontSize: 13, color: mutedColor(context)),
           ),
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              for (var i = 0; i < rank.stars; i++)
+                Icon(Icons.star, size: 12, color: acc),
+            ],
+          ),
         ],
       ),
     );
@@ -659,10 +831,12 @@ class ReadPage extends StatefulWidget {
 class _ReadPageState extends State<ReadPage> {
   double fontSize = 28;
   int? newStreak;
+  Rank? rankUp;
   final ScrollController ctrl = ScrollController();
   SharedPreferences? prefs;
   double _lastFrac = 0;
   double _maxFrac = 0;
+  double _score = 0;
 
   @override
   void initState() {
@@ -684,6 +858,7 @@ class _ReadPageState extends State<ReadPage> {
     }
     _lastFrac = frac;
     _maxFrac = p.getDouble('max_${widget.surah}') ?? 0.0;
+    _score = p.getDouble('score') ?? 0.0;
     if (!mounted) return;
     setState(() {
       if (f != null) fontSize = f;
@@ -700,9 +875,24 @@ class _ReadPageState extends State<ReadPage> {
   }
 
   void _recordMax(double v) {
-    if (v > _maxFrac) {
-      _maxFrac = v;
-      prefs?.setDouble('max_${widget.surah}', v);
+    if (v <= _maxFrac) return;
+    final delta = (v - _maxFrac) * widget.ayat.length / kTotalAyat;
+    _maxFrac = v;
+    prefs?.setDouble('max_${widget.surah}', v);
+    _addScore(delta);
+  }
+
+  void _addScore(double delta) {
+    final p = prefs;
+    if (p == null) return;
+    final before = _score;
+    _score += delta;
+    p.setDouble('score', _score);
+    final rb = rankIndexFor(before);
+    final ra = rankIndexFor(_score);
+    if (ra > rb) {
+      rankIndex.value = ra;
+      if (mounted) setState(() => rankUp = ranks[ra]);
     }
   }
 
@@ -743,6 +933,7 @@ class _ReadPageState extends State<ReadPage> {
     final acc = accent(context);
     final textColor =
         dark ? const Color(0xFFEDE8D5) : const Color(0xFF1B1B1B);
+    final up = rankUp;
     return Scaffold(
       appBar: AppBar(
         title: Text('سورة ${surahNames[widget.surah - 1]}'),
@@ -804,7 +995,120 @@ class _ReadPageState extends State<ReadPage> {
                 onDone: () => setState(() => newStreak = null),
               ),
             ),
+          if (up != null)
+            Positioned.fill(
+              child: RankUpOverlay(
+                rank: up,
+                onDone: () => setState(() => rankUp = null),
+              ),
+            ),
         ],
+      ),
+    );
+  }
+}
+
+class RankUpOverlay extends StatefulWidget {
+  final Rank rank;
+  final VoidCallback onDone;
+  const RankUpOverlay({super.key, required this.rank, required this.onDone});
+
+  @override
+  State<RankUpOverlay> createState() => _RankUpOverlayState();
+}
+
+class _RankUpOverlayState extends State<RankUpOverlay>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1300),
+  );
+  late final Animation<double> scale =
+      CurvedAnimation(parent: c, curve: Curves.elasticOut);
+  Timer? timer;
+
+  @override
+  void initState() {
+    super.initState();
+    c.forward();
+    timer = Timer(const Duration(milliseconds: 3800), widget.onDone);
+  }
+
+  @override
+  void dispose() {
+    timer?.cancel();
+    c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final rank = widget.rank;
+    return GestureDetector(
+      onTap: widget.onDone,
+      child: Container(
+        color: Colors.black.withOpacity(0.72),
+        child: Center(
+          child: ScaleTransition(
+            scale: scale,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 130,
+                  height: 130,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      begin: Alignment.topRight,
+                      end: Alignment.bottomLeft,
+                      colors: [
+                        Color.lerp(rank.color, Colors.white, 0.3)!,
+                        rank.color,
+                      ],
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: rank.color.withOpacity(0.6),
+                        blurRadius: 50,
+                        spreadRadius: 6,
+                      ),
+                    ],
+                  ),
+                  child: const Icon(Icons.workspace_premium,
+                      color: Colors.white, size: 76),
+                ),
+                const SizedBox(height: 18),
+                const Text(
+                  'ترقية!',
+                  style: TextStyle(
+                    fontSize: 22,
+                    color: Colors.amber,
+                    decoration: TextDecoration.none,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  rank.name,
+                  style: const TextStyle(
+                    fontFamily: quranFont,
+                    fontSize: 38,
+                    color: Colors.white,
+                    decoration: TextDecoration.none,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (var i = 0; i < rank.stars; i++)
+                      const Icon(Icons.star, color: Colors.amber, size: 20),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -911,4 +1215,4 @@ class _FlameOverlayState extends State<FlameOverlay>
       ),
     );
   }
-}
+} 
