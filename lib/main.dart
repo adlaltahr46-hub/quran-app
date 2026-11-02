@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -26,11 +27,16 @@ const surahNames = [
 const green = Color(0xFF14513E);
 const greenLight = Color(0xFF7FD1AE);
 const flameOn = Color(0xFFF26B1D);
+const quranFont = 'AmiriQuran';
 
 final ValueNotifier<ThemeMode> themeMode = ValueNotifier(ThemeMode.light);
 
 bool isDark(BuildContext c) => Theme.of(c).brightness == Brightness.dark;
 Color accent(BuildContext c) => isDark(c) ? greenLight : green;
+Color cardColor(BuildContext c) =>
+    isDark(c) ? const Color(0xFF16231E) : Colors.white;
+Color mutedColor(BuildContext c) =>
+    isDark(c) ? Colors.white60 : Colors.black54;
 
 Future<void> toggleTheme() async {
   final dark = themeMode.value != ThemeMode.dark;
@@ -153,6 +159,9 @@ class _HomePageState extends State<HomePage> {
   StreakData streak = const StreakData(0, false);
   int? lastSurah;
   double lastFrac = 0;
+  Map<int, double> progress = {};
+  double khatma = 0;
+  int doneCount = 0;
   String? error;
 
   @override
@@ -165,10 +174,26 @@ class _HomePageState extends State<HomePage> {
     final p = await SharedPreferences.getInstance();
     final s = p.getInt('last_surah');
     final f = p.getDouble('last_frac') ?? 0.0;
+    final prog = <int, double>{};
+    double readAyat = 0;
+    int totalAyat = 0;
+    int done = 0;
+    final q = quran;
+    for (var i = 1; i <= 114; i++) {
+      final v = p.getDouble('max_$i') ?? 0.0;
+      prog[i] = v;
+      final n = q?[i]?.length ?? 0;
+      totalAyat += n;
+      readAyat += v * n;
+      if (v >= 0.97) done++;
+    }
     if (!mounted) return;
     setState(() {
       lastSurah = s;
       lastFrac = f;
+      progress = prog;
+      khatma = totalAyat == 0 ? 0.0 : readAyat / totalAyat;
+      doneCount = done;
     });
   }
 
@@ -208,6 +233,8 @@ class _HomePageState extends State<HomePage> {
       children: const [
         Text(
             'نص القرآن الكريم من مشروع تنزيل (tanzil.net) بموجب رخصة Creative Commons Attribution 3.0، وهو غير معدّل.'),
+        SizedBox(height: 8),
+        Text('الخط: Amiri Quran بموجب رخصة SIL Open Font License.'),
       ],
     );
   }
@@ -215,7 +242,6 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     final dark = isDark(context);
-    final acc = accent(context);
     final last = lastSurah;
     return Scaffold(
       appBar: AppBar(
@@ -243,34 +269,196 @@ class _HomePageState extends State<HomePage> {
             )
           : quran == null
               ? const Center(child: CircularProgressIndicator())
-              : Column(
-                  children: [
-                    StreakBadge(streak: streak),
-                    if (last != null && last >= 1 && last <= 114)
-                      ContinueCard(
-                        surah: last,
-                        frac: lastFrac,
-                        onTap: () => _open(last),
-                      ),
-                    Expanded(
-                      child: ListView.separated(
-                        itemCount: 114,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
-                        itemBuilder: (_, i) => ListTile(
-                          leading: CircleAvatar(
-                            radius: 18,
-                            backgroundColor: acc.withOpacity(0.12),
-                            child: Text(arabicDigits(i + 1),
-                                style: TextStyle(color: acc, fontSize: 13)),
-                          ),
-                          title: Text('سورة ${surahNames[i]}',
-                              style: const TextStyle(fontSize: 18)),
-                          onTap: () => _open(i + 1),
-                        ),
-                      ),
-                    ),
-                  ],
+              : ListView.builder(
+                  padding: const EdgeInsets.only(bottom: 24),
+                  itemCount: 115,
+                  itemBuilder: (_, i) {
+                    if (i == 0) {
+                      return Column(
+                        children: [
+                          StreakBadge(streak: streak),
+                          KhatmaCard(value: khatma, done: doneCount),
+                          if (last != null && last >= 1 && last <= 114)
+                            ContinueCard(
+                              surah: last,
+                              frac: lastFrac,
+                              onTap: () => _open(last),
+                            ),
+                        ],
+                      );
+                    }
+                    return SurahTile(
+                      number: i,
+                      ayahCount: quran![i]?.length ?? 0,
+                      progress: progress[i] ?? 0.0,
+                      onTap: () => _open(i),
+                    );
+                  },
                 ),
+    );
+  }
+}
+
+class NumberBadge extends StatelessWidget {
+  final int number;
+  final bool done;
+  const NumberBadge({super.key, required this.number, required this.done});
+
+  @override
+  Widget build(BuildContext context) {
+    final acc = accent(context);
+    final onAcc = isDark(context) ? const Color(0xFF0F1A16) : Colors.white;
+    return SizedBox(
+      width: 46,
+      height: 46,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          for (final a in [0.0, math.pi / 4])
+            Transform.rotate(
+              angle: a,
+              child: Container(
+                width: 31,
+                height: 31,
+                decoration: BoxDecoration(
+                  color: done ? acc : acc.withOpacity(0.10),
+                  border: Border.all(color: acc, width: 1.4),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+          done
+              ? Icon(Icons.check, size: 18, color: onAcc)
+              : Text(
+                  arabicDigits(number),
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: acc,
+                      fontWeight: FontWeight.w600),
+                ),
+        ],
+      ),
+    );
+  }
+}
+
+class SurahTile extends StatelessWidget {
+  final int number;
+  final int ayahCount;
+  final double progress;
+  final VoidCallback onTap;
+  const SurahTile({
+    super.key,
+    required this.number,
+    required this.ayahCount,
+    required this.progress,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final acc = accent(context);
+    final done = progress >= 0.97;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Material(
+        color: cardColor(context),
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Row(
+              children: [
+                NumberBadge(number: number, done: done),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'سورة ${surahNames[number - 1]}',
+                        style: const TextStyle(
+                            fontSize: 20, fontFamily: quranFont),
+                      ),
+                      Text(
+                        '${arabicDigits(ayahCount)} آية',
+                        style: TextStyle(
+                            fontSize: 13, color: mutedColor(context)),
+                      ),
+                    ],
+                  ),
+                ),
+                if (done)
+                  Icon(Icons.check_circle, color: acc)
+                else if (progress > 0)
+                  Text(
+                    '${arabicDigits((progress * 100).round())}٪',
+                    style: TextStyle(color: acc, fontSize: 14),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class KhatmaCard extends StatelessWidget {
+  final double value;
+  final int done;
+  const KhatmaCard({super.key, required this.value, required this.done});
+
+  @override
+  Widget build(BuildContext context) {
+    final acc = accent(context);
+    final dark = isDark(context);
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: cardColor(context),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: dark ? Colors.white12 : Colors.black12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.auto_stories, color: acc),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text('تقدّمك في الختمة',
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+              ),
+              Text(
+                '${arabicDigits((value * 100).round())}٪',
+                style: TextStyle(
+                    color: acc, fontSize: 18, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: LinearProgressIndicator(
+              value: value.clamp(0.0, 1.0).toDouble(),
+              minHeight: 8,
+              backgroundColor: acc.withOpacity(0.15),
+              color: acc,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '${arabicDigits(done)} من ١١٤ سورة مكتملة',
+            style: TextStyle(fontSize: 13, color: mutedColor(context)),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -341,7 +529,7 @@ class StreakBadge extends StatelessWidget {
       margin: const EdgeInsets.fromLTRB(16, 4, 16, 12),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: dark ? const Color(0xFF1A2A24) : Colors.white,
+        color: cardColor(context),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: dark ? Colors.white12 : Colors.black12),
       ),
@@ -355,9 +543,40 @@ class StreakBadge extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: Text(message,
-                style: TextStyle(
-                    fontSize: 15,
-                    color: dark ? Colors.white70 : Colors.black54)),
+                style: TextStyle(fontSize: 15, color: mutedColor(context))),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class SurahHeader extends StatelessWidget {
+  final int surah;
+  final int count;
+  const SurahHeader({super.key, required this.surah, required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    final acc = accent(context);
+    return Container(
+      margin: const EdgeInsets.fromLTRB(0, 8, 0, 14),
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      decoration: BoxDecoration(
+        color: acc.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: acc.withOpacity(0.6), width: 1.5),
+      ),
+      child: Column(
+        children: [
+          Text(
+            'سورة ${surahNames[surah - 1]}',
+            style: TextStyle(fontFamily: quranFont, fontSize: 30, color: acc),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            '${arabicDigits(count)} آية',
+            style: TextStyle(fontSize: 13, color: mutedColor(context)),
           ),
         ],
       ),
@@ -375,11 +594,12 @@ class ReadPage extends StatefulWidget {
 }
 
 class _ReadPageState extends State<ReadPage> {
-  double fontSize = 26;
+  double fontSize = 28;
   int? newStreak;
   final ScrollController ctrl = ScrollController();
   SharedPreferences? prefs;
   double _lastFrac = 0;
+  double _maxFrac = 0;
 
   @override
   void initState() {
@@ -400,14 +620,27 @@ class _ReadPageState extends State<ReadPage> {
       await p.setDouble('last_frac', 0.0);
     }
     _lastFrac = frac;
+    _maxFrac = p.getDouble('max_${widget.surah}') ?? 0.0;
     if (!mounted) return;
     setState(() {
       if (f != null) fontSize = f;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || frac <= 0 || !ctrl.hasClients) return;
-      ctrl.jumpTo(frac * ctrl.position.maxScrollExtent);
+      if (!mounted || !ctrl.hasClients) return;
+      final max = ctrl.position.maxScrollExtent;
+      if (max <= 0) {
+        _recordMax(1.0);
+        return;
+      }
+      if (frac > 0) ctrl.jumpTo(frac * max);
     });
+  }
+
+  void _recordMax(double v) {
+    if (v > _maxFrac) {
+      _maxFrac = v;
+      prefs?.setDouble('max_${widget.surah}', v);
+    }
   }
 
   void _onScroll() {
@@ -415,6 +648,7 @@ class _ReadPageState extends State<ReadPage> {
     final max = ctrl.position.maxScrollExtent;
     if (max <= 0) return;
     final frac = (ctrl.offset / max).clamp(0.0, 1.0).toDouble();
+    _recordMax(frac);
     if ((frac - _lastFrac).abs() < 0.004) return;
     _lastFrac = frac;
     prefs?.setDouble('last_frac', frac);
@@ -428,7 +662,7 @@ class _ReadPageState extends State<ReadPage> {
   }
 
   Future<void> _changeFont(double delta) async {
-    final next = (fontSize + delta).clamp(18.0, 44.0).toDouble();
+    final next = (fontSize + delta).clamp(18.0, 48.0).toDouble();
     setState(() => fontSize = next);
     final p = await SharedPreferences.getInstance();
     await p.setDouble('font_size', next);
@@ -472,20 +706,32 @@ class _ReadPageState extends State<ReadPage> {
           PatternScroll(
             controller: ctrl,
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
-            child: Text.rich(
-              TextSpan(
-                children: [
-                  for (var i = 0; i < ayat.length; i++) ...[
-                    TextSpan(text: ayat[i]),
-                    TextSpan(
-                      text: ' \uFD3F${arabicDigits(i + 1)}\uFD3E ',
-                      style: TextStyle(color: acc, fontSize: fontSize * 0.75),
-                    ),
-                  ],
-                ],
-              ),
-              textAlign: TextAlign.justify,
-              style: TextStyle(fontSize: fontSize, height: 2.0, color: textColor),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SurahHeader(surah: widget.surah, count: ayat.length),
+                Text.rich(
+                  TextSpan(
+                    children: [
+                      for (var i = 0; i < ayat.length; i++) ...[
+                        TextSpan(text: ayat[i]),
+                        TextSpan(
+                          text: ' \uFD3F${arabicDigits(i + 1)}\uFD3E ',
+                          style: TextStyle(
+                              color: acc, fontSize: fontSize * 0.75),
+                        ),
+                      ],
+                    ],
+                  ),
+                  textAlign: TextAlign.justify,
+                  style: TextStyle(
+                    fontFamily: quranFont,
+                    fontSize: fontSize,
+                    height: 2.2,
+                    color: textColor,
+                  ),
+                ),
+              ],
             ),
           ),
           if (newStreak != null)
@@ -602,4 +848,4 @@ class _FlameOverlayState extends State<FlameOverlay>
       ),
     );
   }
-} 
+}
