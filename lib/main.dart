@@ -162,6 +162,7 @@ class _HomePageState extends State<HomePage> {
   Map<int, double> progress = {};
   double khatma = 0;
   int doneCount = 0;
+  int khatmaCount = 0;
   String? error;
 
   @override
@@ -194,6 +195,7 @@ class _HomePageState extends State<HomePage> {
       progress = prog;
       khatma = totalAyat == 0 ? 0.0 : readAyat / totalAyat;
       doneCount = done;
+      khatmaCount = p.getInt('khatma_count') ?? 0;
     });
   }
 
@@ -223,6 +225,41 @@ class _HomePageState extends State<HomePage> {
     );
     final s = await StreakService.load();
     if (mounted) setState(() => streak = s);
+    await _loadLast();
+  }
+
+  Future<void> _confirmReset() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('بدء ختمة جديدة؟'),
+        content: const Text(
+            'سيُمسح تقدّمك في الختمة وعلامات السور المكتملة ومكان التوقف. لن يتأثر الاستريك.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('ابدأ من جديد'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) await _resetKhatma();
+  }
+
+  Future<void> _resetKhatma() async {
+    final p = await SharedPreferences.getInstance();
+    if (khatma >= 0.97) {
+      await p.setInt('khatma_count', (p.getInt('khatma_count') ?? 0) + 1);
+    }
+    for (var i = 1; i <= 114; i++) {
+      await p.remove('max_$i');
+    }
+    await p.remove('last_surah');
+    await p.remove('last_frac');
     await _loadLast();
   }
 
@@ -277,7 +314,12 @@ class _HomePageState extends State<HomePage> {
                       return Column(
                         children: [
                           StreakBadge(streak: streak),
-                          KhatmaCard(value: khatma, done: doneCount),
+                          KhatmaCard(
+                            value: khatma,
+                            done: doneCount,
+                            khatmaCount: khatmaCount,
+                            onReset: _confirmReset,
+                          ),
                           if (last != null && last >= 1 && last <= 114)
                             ContinueCard(
                               surah: last,
@@ -409,12 +451,23 @@ class SurahTile extends StatelessWidget {
 class KhatmaCard extends StatelessWidget {
   final double value;
   final int done;
-  const KhatmaCard({super.key, required this.value, required this.done});
+  final int khatmaCount;
+  final VoidCallback onReset;
+  const KhatmaCard({
+    super.key,
+    required this.value,
+    required this.done,
+    required this.khatmaCount,
+    required this.onReset,
+  });
 
   @override
   Widget build(BuildContext context) {
     final acc = accent(context);
     final dark = isDark(context);
+    final summary = khatmaCount > 0
+        ? '${arabicDigits(done)} من ١١٤ سورة مكتملة  •  ختمات مكتملة: ${arabicDigits(khatmaCount)}'
+        : '${arabicDigits(done)} من ١١٤ سورة مكتملة';
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       padding: const EdgeInsets.all(16),
@@ -454,9 +507,19 @@ class KhatmaCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            '${arabicDigits(done)} من ١١٤ سورة مكتملة',
+            summary,
             style: TextStyle(fontSize: 13, color: mutedColor(context)),
           ),
+          if (value > 0)
+            Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: TextButton.icon(
+                onPressed: onReset,
+                icon: const Icon(Icons.restart_alt, size: 20),
+                label: const Text('ابدأ ختمة جديدة'),
+                style: TextButton.styleFrom(foregroundColor: acc),
+              ),
+            ),
         ],
       ),
     );
