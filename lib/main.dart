@@ -229,8 +229,7 @@ class _HomePageState extends State<HomePage> {
       if (v >= 0.97) done++;
     }
     final k = totalAyat == 0 ? 0.0 : readAyat / totalAyat;
-    double sc = p.getDouble('score') ?? k;
-    if (sc < k) sc = k;
+    final sc = p.getDouble('score') ?? k;
     await p.setDouble('score', sc);
     if (!mounted) return;
     rankIndex.value = rankIndexFor(sc);
@@ -309,6 +308,40 @@ class _HomePageState extends State<HomePage> {
     await _loadLast();
   }
 
+  Future<void> _confirmResetRank() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('البدء من الصفر؟'),
+        content: const Text(
+            'سترجع إلى رتبة «مبتدئ»، ويُمسح تقدّمك في الختمة وعدد ختماتك ومكان التوقف. لن يتأثر الاستريك.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('ابدأ من الصفر'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) await _resetAll();
+  }
+
+  Future<void> _resetAll() async {
+    final p = await SharedPreferences.getInstance();
+    await p.setDouble('score', 0.0);
+    for (var i = 1; i <= 114; i++) {
+      await p.remove('max_$i');
+    }
+    await p.remove('last_surah');
+    await p.remove('last_frac');
+    await p.remove('khatma_count');
+    await _loadLast();
+  }
+
   void _about() {
     showAboutDialog(
       context: context,
@@ -359,7 +392,10 @@ class _HomePageState extends State<HomePage> {
                     if (i == 0) {
                       return Column(
                         children: [
-                          RankCard(score: score),
+                          RankCard(
+                            score: score,
+                            onReset: _confirmResetRank,
+                          ),
                           StreakBadge(streak: streak),
                           KhatmaCard(
                             value: khatma,
@@ -390,7 +426,8 @@ class _HomePageState extends State<HomePage> {
 
 class RankCard extends StatelessWidget {
   final double score;
-  const RankCard({super.key, required this.score});
+  final VoidCallback onReset;
+  const RankCard({super.key, required this.score, required this.onReset});
 
   @override
   Widget build(BuildContext context) {
@@ -498,6 +535,16 @@ class RankCard extends StatelessWidget {
             child: Text(note,
                 style: TextStyle(fontSize: 13, color: mutedColor(context))),
           ),
+          if (score > 0)
+            Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: TextButton.icon(
+                onPressed: onReset,
+                icon: const Icon(Icons.restart_alt, size: 20),
+                label: const Text('ابدأ الرتب من جديد'),
+                style: TextButton.styleFrom(foregroundColor: acc),
+              ),
+            ),
         ],
       ),
     );
@@ -1215,4 +1262,4 @@ class _FlameOverlayState extends State<FlameOverlay>
       ),
     );
   }
-} 
+}
