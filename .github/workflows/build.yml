@@ -64,6 +64,12 @@ jobs:
       - name: Set app name
         run: sed -i 's/android:label="[^"]*"/android:label="القرآن الكريم"/' android/app/src/main/AndroidManifest.xml
 
+      - name: Set application ID
+        run: |
+          sed -i 's/applicationId = "[^"]*"/applicationId = "io.github.adlaltahr46hub.quranapp"/' android/app/build.gradle.kts || true
+          sed -i 's/applicationId "[^"]*"/applicationId "io.github.adlaltahr46hub.quranapp"/' android/app/build.gradle || true
+          grep -n "applicationId" android/app/build.gradle* || true
+
       - name: Configure Android for notifications
         run: |
           python3 - <<'EOF'
